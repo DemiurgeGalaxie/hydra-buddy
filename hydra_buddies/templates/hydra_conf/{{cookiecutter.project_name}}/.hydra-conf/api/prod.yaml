@@ -1,0 +1,6 @@
+url: https://api.example.com
+key: ${api.private_key}
+timeout: 30
+retry:
+  max_attempts: 3
+  delay: 1 

@@ -312,3 +312,127 @@ Cela réinitialisera le contexte et vous permettra de recommencer à naviguer da
 ## Conclusion
 
 Hydra-Buddies offre une solution élégante pour la gestion de configuration en Python, combinant simplicité d'utilisation et puissance fonctionnelle.
+
+# Hydra-Buddies Documentation
+
+## Commandes CLI
+
+Hydra-Buddies fournit plusieurs commandes en ligne de commande via l'utilitaire `buddy`. Voici le détail de chaque commande :
+
+### Initialisation du projet
+
+```bash
+buddy init
+```
+
+Cette commande initialise un nouveau projet avec une structure de configuration Hydra. Elle :
+- Crée un répertoire `.hydra-conf` avec une structure complète
+- Configure les environnements dev et prod
+- Met en place la gestion des secrets
+- Ajoute automatiquement le répertoire des secrets au .gitignore
+- Crée les configurations pour la base de données, l'API et les logs
+
+### Lecture de configuration
+
+```bash
+# Lire toute la configuration
+buddy read config_name
+
+# Lire avec un chemin spécifique
+buddy read config_name --path /chemin/vers/config
+```
+
+Cette commande affiche le contenu complet d'une configuration. Options :
+- `config_name` : Nom de la configuration à lire
+- `--path, -p` : Chemin optionnel vers le répertoire de configuration
+
+### Obtention d'une valeur spécifique
+
+```bash
+# Obtenir une valeur simple
+buddy get config_name database.host
+
+# Avec un chemin personnalisé
+buddy get config_name api.url --path /chemin/vers/config
+```
+
+Cette commande permet d'extraire une valeur spécifique de la configuration. Arguments :
+- `config_name` : Nom de la configuration
+- `key` : Chemin de la clé (utilise la notation point)
+- `--path, -p` : Chemin optionnel vers le répertoire de configuration
+
+### Liste des clés disponibles
+
+```bash
+# Lister toutes les clés
+buddy list-keys config_name
+
+# Avec un chemin personnalisé
+buddy list-keys config_name --path /chemin/vers/config
+```
+
+Cette commande affiche toutes les clés disponibles dans la configuration de manière récursive. Options :
+- `config_name` : Nom de la configuration à explorer
+- `--path, -p` : Chemin optionnel vers le répertoire de configuration
+
+## Structure de configuration générée
+
+L'initialisation (`buddy init`) crée la structure suivante :
+
+```
+.hydra-conf/
+├── api/
+│   ├── default.yaml
+│   ├── dev.yaml
+│   └── prod.yaml
+├── database/
+│   ├── default.yaml
+│   ├── dev.yaml
+│   └── prod.yaml
+├── logging/
+│   ├── default.yaml
+│   ├── dev.yaml
+│   └── prod.yaml
+├── secrets/
+│   ├── keys.yaml
+│   └── login.yaml
+├── config.yaml
+├── config_dev.yaml
+└── config_prod.yaml
+```
+
+### Sécurité
+
+La commande `init` configure automatiquement la sécurité :
+- Ajoute `.hydra-conf/secret/*` au .gitignore
+- Met en place des variables d'environnement pour les secrets
+- Sépare les configurations sensibles dans le répertoire `secrets/`
+
+### Exemples d'utilisation
+
+1. Initialiser un nouveau projet :
+```bash
+buddy init
+```
+
+2. Lire la configuration de développement :
+```bash
+buddy read config_dev
+```
+
+3. Obtenir l'URL de l'API en production :
+```bash
+buddy get config_prod api.url
+```
+
+4. Explorer toutes les clés disponibles :
+```bash
+buddy list-keys config
+```
+
+### Bonnes pratiques
+
+1. Toujours initialiser le projet avec `buddy init`
+2. Vérifier que les secrets sont bien dans .gitignore
+3. Utiliser des variables d'environnement pour les valeurs sensibles
+4. Séparer les configurations par environnement

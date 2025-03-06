@@ -1,0 +1,6 @@
+url: http://dev-api.example.com
+key: ${api.public_key}
+timeout: 60
+retry:
+  max_attempts: 5
+  delay: 0.5 

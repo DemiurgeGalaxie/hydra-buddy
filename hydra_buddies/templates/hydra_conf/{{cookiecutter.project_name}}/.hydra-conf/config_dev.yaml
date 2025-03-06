@@ -1,0 +1,6 @@
+defaults:
+  - config
+  - database: dev
+  - api: dev
+
+env: development 

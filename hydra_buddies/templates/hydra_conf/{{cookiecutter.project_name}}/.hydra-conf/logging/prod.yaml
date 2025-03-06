@@ -1,0 +1,21 @@
+version: 1
+formatters:
+  json:
+    format: '{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}'
+
+handlers:
+  file:
+    class: logging.handlers.RotatingFileHandler
+    formatter: json
+    filename: /var/log/app/production.log
+    maxBytes: 52428800  # 50MB
+    backupCount: 10
+    encoding: utf8
+
+loggers:
+  app:
+    level: WARNING
+    handlers: [file]
+    credentials:
+      username: ${services.rabbitmq.username}
+      password: ${services.rabbitmq.password} 

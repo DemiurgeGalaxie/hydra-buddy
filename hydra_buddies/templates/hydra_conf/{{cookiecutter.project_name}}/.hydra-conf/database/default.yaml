@@ -1,0 +1,5 @@
+host: localhost
+port: 5432
+credentials:
+  username: user
+  password: ${oc.env:DB_PASSWORD,default_password} 
