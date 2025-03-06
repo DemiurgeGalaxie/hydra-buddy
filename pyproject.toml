@@ -1,9 +1,13 @@
 [tool.poetry]
-name = "exercise"
+name = "hydra-buddies"
 version = "0.1.0"
-description = ""
+description = "Un gestionnaire de configuration basé sur Hydra"
 authors = ["MChrys <chrys.beltran@outlook.fr>"]
 readme = "README.md"
+packages = [{include = "hydra_buddies"}]
+license = "MIT"
+repository = "https://github.com/MChrys/hydra-buddies"
+keywords = ["hydra", "configuration", "omegaconf"]
 
 
 
