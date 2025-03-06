@@ -1,5 +1,8 @@
 import click
-from .reader import TheReader
+from .buddies import TheReader
+import os
+import shutil
+from cookiecutter.main import cookiecutter
 
 @click.group()
 def cli():
@@ -52,3 +55,47 @@ def list_keys(config_name, path):
                 print_keys(obj[key], f"{full_key}.")
     
     print_keys(reader.get_cfg()) 
+    
+@cli.command()
+def init():
+    """Initialiser un répertoire de configuration"""
+    if os.path.exists(os.path.join(os.getcwd(), '.hydra-conf')):
+        click.echo("Un répertoire de configuration existe déjà", err=True)
+        return
+    
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'hydra_conf')
+    output_path = os.getcwd()
+    
+    # Copier les templates avec cookiecutter
+    cookiecutter(
+        template_path,
+        output_dir=output_path,
+        no_input=True,
+        extra_context={
+            'project_name': os.path.basename(output_path)
+        }
+    )
+    
+    # Déplacer les fichiers au bon endroit
+    temp_dir = os.path.join(output_path, os.path.basename(output_path))
+    if os.path.exists(temp_dir):
+        shutil.move(os.path.join(temp_dir, '.hydra-conf'), output_path)
+        shutil.rmtree(temp_dir)
+    
+    # Vérifier si le répertoire secret est dans le fichier .gitignore
+    gitignore_path = os.path.join(output_path, '.gitignore')
+    secret_line = '.hydra-conf/secrets/*\n'
+    
+    if os.path.exists(gitignore_path):
+        with open(gitignore_path, 'r') as file:
+            lines = file.readlines()
+            if secret_line not in lines:
+                with open(gitignore_path, 'a') as file:
+                    file.write(secret_line)
+    else:
+        with open(gitignore_path, 'w') as file:
+            file.write(secret_line)
+    
+    click.echo("Répertoire de configuration initialisé avec succès")
+    
+
