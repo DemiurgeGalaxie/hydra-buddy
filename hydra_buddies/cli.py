@@ -112,7 +112,9 @@ def get(config_name, key, path):
 @click.option('--values', '-v', is_flag=True, help='Afficher les valeurs primitives')
 @click.option('--resolve', '-r', is_flag=True, help='Résoudre les références dans defaults')
 @click.option('--debug', '-d', is_flag=True, help='Afficher des informations de débogage')
-def list_keys(config_name, path, full, values, resolve, debug):
+@click.option('--ref', is_flag=True, help='Afficher les références des sources pour chaque clé')
+@click.option('--raw', is_flag=True, help='Inclure les clés defaults dans le résultat')
+def list_keys(config_name, path, full, values, resolve, debug, ref, raw):
     """Lister toutes les clés disponibles"""
     # Normaliser le nom de configuration
     original_name = config_name  # Garder le nom d'origine pour l'affichage
@@ -315,32 +317,53 @@ def list_keys(config_name, path, full, values, resolve, debug):
                                             collect_keys(referenced_config, source=source)
         
         # Récupérer le contenu du fichier config.yaml pour l'examiner et l'analyser directement
-        if debug:
-            click.echo("Récupération manuelle des fichiers secrets:")
-            secrets_dir = os.path.join(config_dir, 'secrets')
-            if os.path.isdir(secrets_dir):
-                for secret_file in os.listdir(secrets_dir):
-                    if secret_file.endswith('.yaml'):
-                        secret_name = os.path.splitext(secret_file)[0]
-                        secret_path = os.path.join(secrets_dir, secret_file)
+        secrets_dir = os.path.join(config_dir, 'secrets')
+        if os.path.isdir(secrets_dir):
+            if debug:
+                click.echo("Récupération manuelle des fichiers secrets:")
+            
+            for secret_file in os.listdir(secrets_dir):
+                if secret_file.endswith('.yaml'):
+                    secret_name = os.path.splitext(secret_file)[0]
+                    secret_path = os.path.join(secrets_dir, secret_file)
+                    
+                    if debug:
                         click.echo(f"  Trouvé fichier secret: {secret_path}")
+                    
+                    # Charger le fichier secret
+                    with open(secret_path, 'r') as f:
+                        secret_data = yaml.safe_load(f)
                         
-                        # Charger le fichier secret
-                        with open(secret_path, 'r') as f:
-                            secret_data = yaml.safe_load(f)
-                            
-                        # Collecter les clés avec la source correcte
-                        source = f"{display_name}.secrets.{secret_name}"
-                        if debug:
-                            click.echo(f"  Collecte des clés pour: {source}")
-                        collect_keys(secret_data, source=source)
+                    # Collecter les clés avec la source correcte qui inclut "config"
+                    source = f"{display_name}.config.secrets.{secret_name}"
+                    if debug:
+                        click.echo(f"  Collecte des clés pour: {source}")
+                    collect_keys(secret_data, source=source)
         
-        # Afficher les clés de manière structurée
-        for source, keys in sorted(structured_keys.items()):
-            keys.sort()
-            for key in keys:
-                click.echo(f"{source} -> {key}")
+        if ref:
+            # Afficher les clés avec leur source, triées par source puis par clé
+            for source, keys in sorted(structured_keys.items()):
+                keys_to_show = keys
                 
+                # Filtrer les clés defaults si --raw n'est pas activé
+                if not raw:
+                    keys_to_show = [k for k in keys if not k.startswith("defaults")]
+                
+                keys_to_show.sort()
+                for key in keys_to_show:
+                    click.echo(f"{source} -> {key}")
+        else:
+            # Collecter toutes les clés dans une seule liste, éliminer les doublons et trier
+            all_keys = set()
+            for keys in structured_keys.values():
+                all_keys.update(keys)
+            
+            # Filtrer les clés commençant par "defaults" si --ref n'est pas spécifié
+            filtered_keys = [key for key in all_keys if not key.startswith("defaults")]
+            
+            # Afficher toutes les clés triées sans leur source
+            for key in sorted(filtered_keys):
+                click.echo(key)
     else:
         # Pour la version non résolue, utiliser TheReader comme avant
         reader = TheReader(config_name)
@@ -387,11 +410,30 @@ def list_keys(config_name, path, full, values, resolve, debug):
             
             collect_keys(config_dict, source=display_name)
             
-            # Afficher les clés de manière structurée
-            for source, keys in sorted(structured_keys.items()):
-                keys.sort()
-                for key in keys:
-                    click.echo(f"{source} -> {key}")
+            if ref:
+                # Afficher les clés avec leur source, triées par source puis par clé
+                for source, keys in sorted(structured_keys.items()):
+                    keys_to_show = keys
+                    
+                    # Filtrer les clés defaults si --raw n'est pas activé
+                    if not raw:
+                        keys_to_show = [k for k in keys if not k.startswith("defaults")]
+                    
+                    keys_to_show.sort()
+                    for key in keys_to_show:
+                        click.echo(f"{source} -> {key}")
+            else:
+                # Collecter toutes les clés dans une seule liste, éliminer les doublons et trier
+                all_keys = set()
+                for keys in structured_keys.values():
+                    all_keys.update(keys)
+                
+                # Filtrer les clés commençant par "defaults" si --ref n'est pas spécifié
+                filtered_keys = [key for key in all_keys if not key.startswith("defaults")]
+                
+                # Afficher toutes les clés triées sans leur source
+                for key in sorted(filtered_keys):
+                    click.echo(key)
         else:
             # Affichage des clés de premier niveau sans modification
             from omegaconf import OmegaConf
