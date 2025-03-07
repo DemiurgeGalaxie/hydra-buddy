@@ -216,3 +216,7 @@ class TheReader:
     
     def __bool__(self):
         return bool(self.cfg)
+
+    def get_config_dir(self):
+        """Retourne le chemin vers le répertoire de configuration."""
+        return self.config_path if hasattr(self, 'config_path') else '.hydra-conf'
