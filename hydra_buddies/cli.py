@@ -213,32 +213,21 @@ def validate_add_config(name, config_dir=None):
     return default_config
 
 def validate_remove_config(name, config_dir=None):
-    """Valide les paramètres pour remove_config et lève des exceptions si nécessaire.
-    
-    Args:
-        name: Nom de la configuration à supprimer
-        config_dir: Répertoire de configuration (par défaut: .hydra-conf dans le répertoire courant)
-        
-    Returns:
-        Tuple (fichier_principal, liste_fichiers_sous_repertoires)
-        
-    Raises:
-        ConfigError: Si la validation échoue
-    """
+    """Valide les paramètres pour remove_config et lève des exceptions si nécessaire."""
     if config_dir is None:
         config_dir = os.path.join(os.getcwd(), '.hydra-conf')
     
     if not os.path.exists(config_dir):
         raise ConfigError("Aucun répertoire de configuration trouvé. Exécutez 'buddy init' d'abord.")
     
+    # Interdire complètement la suppression de tout ce qui s'appelle "default"
+    if name.lower() == "default":  # Rendre insensible à la casse
+        raise ConfigError("Impossible de supprimer la configuration par défaut.")
+    
     # Vérifier si cette configuration existe
     config_file = os.path.join(config_dir, f"config_{name}.yaml")
     if not os.path.exists(config_file):
-        # Vérifier si c'est peut-être la configuration par défaut (config.yaml)
-        if name == "default" and os.path.exists(os.path.join(config_dir, "config.yaml")):
-            raise ConfigError("Impossible de supprimer la configuration par défaut.")
-        else:
-            raise ConfigError(f"La configuration '{name}' n'existe pas.")
+        raise ConfigError(f"La configuration '{name}' n'existe pas.")
     
     # Trouver tous les fichiers associés dans les sous-répertoires
     subconfig_files = []
