@@ -3,6 +3,7 @@ from .buddies import TheReader
 import os
 import shutil
 from cookiecutter.main import cookiecutter
+import yaml
 
 @click.group()
 def cli():
@@ -98,4 +99,155 @@ def init():
     
     click.echo("Répertoire de configuration initialisé avec succès")
     
+@cli.command()
+@click.argument('name')
+def add_config(name):
+    """Créer une nouvelle configuration basée sur default"""
+    config_dir = os.path.join(os.getcwd(), '.hydra-conf')
+    
+    try:
+        default_config = validate_add_config(name, config_dir)
+    except ConfigError as e:
+        click.echo(str(e), err=True)
+        return 1
+    
+    # Charger le contenu de config_default.yaml
+    with open(default_config, 'r') as f:
+        config_content = yaml.safe_load(f) or {}
+    
+    # Modifier la variable env si elle existe
+    if 'env' in config_content:
+        config_content['env'] = name
+    else:
+        # Ajouter la variable env si elle n'existe pas
+        config_content['env'] = name
+    
+    # Créer le fichier config_<name>.yaml
+    new_config_file = os.path.join(config_dir, f"config_{name}.yaml")
+    with open(new_config_file, 'w') as f:
+        yaml.dump(config_content, f, default_flow_style=False)
+    
+    # Parcourir tous les sous-répertoires pour copier default.yaml
+    subdirs_copied = 0
+    for root, dirs, files in os.walk(config_dir):
+        for dir_name in dirs:
+            subdir = os.path.join(root, dir_name)
+            default_yaml = os.path.join(subdir, "default.yaml")
+            
+            if os.path.exists(default_yaml):
+                new_yaml = os.path.join(subdir, f"{name}.yaml")
+                shutil.copy2(default_yaml, new_yaml)
+                subdirs_copied += 1
+    
+    click.echo(f"Configuration '{name}' créée avec succès.")
+    click.echo(f"- Fichier principal: {new_config_file}")
+    click.echo(f"- {subdirs_copied} fichiers de configuration copiés dans les sous-répertoires.")
+    return 0
+
+@cli.command()
+@click.argument('name')
+@click.option('--force', '-f', is_flag=True, help='Forcer la suppression sans confirmation')
+def remove_config(name, force):
+    """Supprimer une configuration existante"""
+    try:
+        config_info = validate_remove_config(name)
+        config_file, subconfig_files = config_info
+    except ConfigError as e:
+        click.echo(str(e), err=True)
+        return 1
+    
+    # Demander confirmation à moins que --force soit utilisé
+    if not force:
+        file_count = len(subconfig_files) + 1  # +1 pour le fichier principal
+        message = f"Vous êtes sur le point de supprimer {file_count} fichiers de configuration pour '{name}'.\nContinuer? [y/N] "
+        if not click.confirm(message, default=False):
+            click.echo("Opération annulée.")
+            return 0
+    
+    # Supprimer le fichier principal
+    os.remove(config_file)
+    
+    # Supprimer les fichiers dans les sous-répertoires
+    for subfile in subconfig_files:
+        try:
+            os.remove(subfile)
+        except OSError:
+            click.echo(f"Impossible de supprimer {subfile}", err=True)
+    
+    click.echo(f"Configuration '{name}' supprimée avec succès.")
+    click.echo(f"- {len(subconfig_files) + 1} fichiers supprimés au total.")
+    return 0
+
+class ConfigError(Exception):
+    """Exception pour les erreurs de configuration"""
+    pass
+
+def validate_add_config(name, config_dir=None):
+    """Valide les paramètres pour add_config et lève des exceptions si nécessaire.
+    
+    Args:
+        name: Nom de la configuration à ajouter
+        config_dir: Répertoire de configuration (par défaut: .hydra-conf dans le répertoire courant)
+        
+    Raises:
+        ConfigError: Si la validation échoue
+    """
+    if config_dir is None:
+        config_dir = os.path.join(os.getcwd(), '.hydra-conf')
+    
+    if not os.path.exists(config_dir):
+        raise ConfigError("Aucun répertoire de configuration trouvé. Exécutez 'buddy init' d'abord.")
+    
+    # Vérifier si cette configuration existe déjà
+    new_config_file = os.path.join(config_dir, f"config_{name}.yaml")
+    if os.path.exists(new_config_file):
+        raise ConfigError(f"La configuration '{name}' existe déjà.")
+    
+    # Vérifier que les fichiers source existent
+    default_config = os.path.join(config_dir, "config_default.yaml")
+    if not os.path.exists(default_config):
+        default_config = os.path.join(config_dir, "config.yaml")
+        if not os.path.exists(default_config):
+            raise ConfigError("Aucun fichier config_default.yaml ou config.yaml trouvé.")
+    
+    return default_config
+
+def validate_remove_config(name, config_dir=None):
+    """Valide les paramètres pour remove_config et lève des exceptions si nécessaire.
+    
+    Args:
+        name: Nom de la configuration à supprimer
+        config_dir: Répertoire de configuration (par défaut: .hydra-conf dans le répertoire courant)
+        
+    Returns:
+        Tuple (fichier_principal, liste_fichiers_sous_repertoires)
+        
+    Raises:
+        ConfigError: Si la validation échoue
+    """
+    if config_dir is None:
+        config_dir = os.path.join(os.getcwd(), '.hydra-conf')
+    
+    if not os.path.exists(config_dir):
+        raise ConfigError("Aucun répertoire de configuration trouvé. Exécutez 'buddy init' d'abord.")
+    
+    # Vérifier si cette configuration existe
+    config_file = os.path.join(config_dir, f"config_{name}.yaml")
+    if not os.path.exists(config_file):
+        # Vérifier si c'est peut-être la configuration par défaut (config.yaml)
+        if name == "default" and os.path.exists(os.path.join(config_dir, "config.yaml")):
+            raise ConfigError("Impossible de supprimer la configuration par défaut.")
+        else:
+            raise ConfigError(f"La configuration '{name}' n'existe pas.")
+    
+    # Trouver tous les fichiers associés dans les sous-répertoires
+    subconfig_files = []
+    for root, dirs, files in os.walk(config_dir):
+        for dir_name in dirs:
+            subdir = os.path.join(root, dir_name)
+            subconfig_file = os.path.join(subdir, f"{name}.yaml")
+            if os.path.exists(subconfig_file):
+                subconfig_files.append(subconfig_file)
+    
+    return (config_file, subconfig_files)
 

@@ -1,0 +1,6 @@
+defaults:
+  - config
+  - database: default
+  - api: default
+
+env: default

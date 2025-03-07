@@ -90,3 +90,140 @@ def test_list_keys_command(runner, temp_project):
         assert "project" in result.output
         # Database sera dans l'output uniquement si on charge correctement les defaults
         # mais notre mock ne le fait pas pour ce test, donc on ne teste pas cette assertion 
+
+def test_add_config_command(runner, temp_project):
+    """Test la commande add-config"""
+    # D'abord initialiser
+    init_result = runner.invoke(cli, ["init"])
+    assert init_result.exit_code == 0, f"Erreur d'initialisation: {init_result.output}"
+    
+    # Vérifier que le répertoire .hydra-conf a été créé
+    assert (temp_project / ".hydra-conf").exists()
+    
+    # Créer une nouvelle configuration "test"
+    result = runner.invoke(cli, ["add-config", "test"])
+    assert result.exit_code == 0, f"Erreur d'ajout de configuration: {result.output}"
+    
+    # Vérifier que le fichier config_test.yaml a été créé
+    config_test_file = temp_project / ".hydra-conf" / "config_test.yaml"
+    assert config_test_file.exists(), "Le fichier config_test.yaml n'a pas été créé"
+    
+    # Vérifier que la variable env est définie correctement
+    import yaml
+    with open(config_test_file, 'r') as f:
+        config_content = yaml.safe_load(f)
+    assert 'env' in config_content, "La variable env n'existe pas dans la configuration"
+    assert config_content['env'] == 'test', f"La variable env n'est pas correctement définie: {config_content['env']}"
+    
+    # Vérifier que les fichiers dans les sous-répertoires ont été copiés
+    database_test_file = temp_project / ".hydra-conf" / "database" / "test.yaml"
+    assert database_test_file.exists(), "Le fichier database/test.yaml n'a pas été créé"
+    
+    # Vérifier que la commande échoue si la configuration existe déjà
+    duplicate_result = runner.invoke(cli, ["add-config", "test"], catch_exceptions=False)
+    assert "existe déjà" in duplicate_result.output, "La commande devrait signaler que la configuration existe déjà"
+    
+    # Vérifier le comportement dans un répertoire sans .hydra-conf
+    with runner.isolated_filesystem() as td:
+        no_config_result = runner.invoke(cli, ["add-config", "test"])
+        # Ne pas vérifier le code de retour, seulement le message
+        assert "Exécutez 'buddy init'" in no_config_result.output, "La commande devrait indiquer d'initialiser d'abord"
+
+def test_add_config_errors():
+    """Test les erreurs spécifiques de la fonction de validation add_config"""
+    import os
+    import pytest
+    from hydra_buddies.cli import validate_add_config, ConfigError
+    
+    # Test: répertoire de configuration inexistant
+    with pytest.raises(ConfigError, match="Aucun répertoire de configuration trouvé"):
+        validate_add_config("test", "/chemin/inexistant")
+    
+    # Test: configuration déjà existante
+    # D'abord créer un répertoire temporaire avec les fichiers nécessaires
+    temp_dir = os.path.join(os.path.dirname(__file__), "temp_test_dir")
+    os.makedirs(temp_dir, exist_ok=True)
+    try:
+        # Créer un fichier config_test.yaml
+        with open(os.path.join(temp_dir, "config_test.yaml"), "w") as f:
+            f.write("env: test\n")
+        
+        # Le test devrait lever une exception
+        with pytest.raises(ConfigError, match="La configuration 'test' existe déjà"):
+            validate_add_config("test", temp_dir)
+        
+        # Test: fichier source manquant
+        with pytest.raises(ConfigError, match="Aucun fichier config_default.yaml ou config.yaml trouvé"):
+            validate_add_config("nouveau", temp_dir)
+    
+    finally:
+        # Nettoyer
+        import shutil
+        shutil.rmtree(temp_dir) 
+
+def test_remove_config_command(runner, temp_project):
+    """Test la commande remove-config"""
+    # D'abord initialiser
+    init_result = runner.invoke(cli, ["init"])
+    assert init_result.exit_code == 0, f"Erreur d'initialisation: {init_result.output}"
+    
+    # Créer une nouvelle configuration "test"
+    runner.invoke(cli, ["add-config", "test"])
+    
+    # Vérifier que les fichiers existent
+    config_test_file = temp_project / ".hydra-conf" / "config_test.yaml"
+    database_test_file = temp_project / ".hydra-conf" / "database" / "test.yaml"
+    assert config_test_file.exists(), "Le fichier config_test.yaml n'a pas été créé"
+    assert database_test_file.exists(), "Le fichier database/test.yaml n'a pas été créé"
+    
+    # Supprimer la configuration avec --force pour éviter la confirmation
+    result = runner.invoke(cli, ["remove-config", "test", "--force"])
+    assert result.exit_code == 0, f"Erreur de suppression: {result.output}"
+    
+    # Vérifier que les fichiers ont été supprimés
+    assert not config_test_file.exists(), "Le fichier config_test.yaml n'a pas été supprimé"
+    assert not database_test_file.exists(), "Le fichier database/test.yaml n'a pas été supprimé"
+    
+    # Vérifier que la commande échoue si la configuration n'existe pas
+    not_exists_result = runner.invoke(cli, ["remove-config", "nonexistent", "--force"])
+    assert "n'existe pas" in not_exists_result.output, "La commande devrait indiquer que la configuration n'existe pas"
+    
+    # Vérifier qu'on ne peut pas supprimer la configuration par défaut
+    default_result = runner.invoke(cli, ["remove-config", "default", "--force"])
+    assert "Impossible de supprimer la configuration par défaut" in default_result.output
+    
+    # Vérifier le comportement dans un répertoire sans .hydra-conf
+    with runner.isolated_filesystem() as td:
+        no_config_result = runner.invoke(cli, ["remove-config", "test", "--force"])
+        assert "Exécutez 'buddy init'" in no_config_result.output 
+
+def test_remove_config_errors():
+    """Test les erreurs spécifiques de la fonction de validation remove_config"""
+    import os
+    import pytest
+    from hydra_buddies.cli import validate_remove_config, ConfigError
+    
+    # Test: répertoire de configuration inexistant
+    with pytest.raises(ConfigError, match="Aucun répertoire de configuration trouvé"):
+        validate_remove_config("test", "/chemin/inexistant")
+    
+    # Créer un répertoire temporaire pour les tests
+    temp_dir = os.path.join(os.path.dirname(__file__), "temp_test_dir")
+    os.makedirs(temp_dir, exist_ok=True)
+    try:
+        # Test: configuration inexistante
+        with pytest.raises(ConfigError, match="La configuration 'test' n'existe pas"):
+            validate_remove_config("test", temp_dir)
+        
+        # Test: protection de la configuration par défaut
+        # Créer un fichier config.yaml (la configuration par défaut)
+        with open(os.path.join(temp_dir, "config.yaml"), "w") as f:
+            f.write("env: default\n")
+            
+        with pytest.raises(ConfigError, match="Impossible de supprimer la configuration par défaut"):
+            validate_remove_config("default", temp_dir)
+    
+    finally:
+        # Nettoyer
+        import shutil
+        shutil.rmtree(temp_dir) 
