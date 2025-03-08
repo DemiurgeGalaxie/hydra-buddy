@@ -4,6 +4,7 @@ import os
 import shutil
 from cookiecutter.main import cookiecutter
 import yaml
+import re
 
 @click.group()
 def cli():
@@ -14,18 +15,16 @@ def cli():
 @click.argument('config_name')
 @click.option('--path', '-p', help='Chemin vers la configuration')
 @click.option('--resolve', '-r', is_flag=True, help='Afficher la configuration complètement résolue')
-def read(config_name, path, resolve):
+@click.option('--debug', '-d', is_flag=True, help='Afficher des informations de débogage')
+def read(config_name, path, resolve, debug):
     """Lire une configuration"""
-    # Normaliser le nom de configuration
-    config_name = normalize_config_name(config_name)
+    # Ne pas normaliser le nom, la fonction get_config_filename s'en occupe
     
     if resolve:
-        # Utiliser l'API Hydra directement
         import os
-        import hydra
-        from hydra.core.global_hydra import GlobalHydra
-        from omegaconf import OmegaConf
         import yaml
+        import hydra
+        from omegaconf import OmegaConf
         
         # Déterminer le chemin de configuration
         config_dir = path if path else os.path.join(os.getcwd(), 'hydra_buddies', '.hydra-conf')
@@ -33,51 +32,33 @@ def read(config_name, path, resolve):
             config_dir = path if path else os.path.join(os.getcwd(), '.hydra-conf')
         
         if debug:
-            click.echo(f"Chemin de configuration utilisé: {config_dir}")
+            click.echo(f"Chemin de configuration: {config_dir}")
         
-        # Réinitialiser Hydra si nécessaire
-        if GlobalHydra().is_initialized():
-            GlobalHydra.instance().clear()
-        
-        # Transformer le nom pour Hydra:
-        # - Pour config.yaml → utiliser "config"
-        # - Pour config_dev.yaml → utiliser "dev"
-        hydra_config_name = config_name
-        if config_name.startswith("config_"):
-            hydra_config_name = config_name[7:]  # Enlever "config_"
-        elif config_name == "config":
-            hydra_config_name = "config"
+        # Obtenir le nom de fichier approprié
+        config_filename = get_config_filename(config_name)
+        config_path = os.path.join(config_dir, config_filename)
         
         if debug:
-            click.echo(f"Nom de configuration pour Hydra: {hydra_config_name}")
+            click.echo(f"Fichier de configuration: {config_path}")
         
         try:
-            # Sauvegarder le répertoire de travail actuel
-            original_cwd = os.getcwd()
+            # Charger le fichier YAML
+            with open(config_path, 'r') as f:
+                config_data = yaml.safe_load(f)
             
-            # Changer temporairement le répertoire de travail
-            os.chdir(os.path.dirname(config_dir))
-            
-            # Utiliser le nom du répertoire comme chemin relatif
-            rel_config_dir = os.path.basename(config_dir)
-            
-            # Initialiser Hydra avec le chemin relatif
-            hydra.initialize(config_path=rel_config_dir, version_base=None)
-            
-            # Composer la configuration complète avec le nom transformé
-            cfg = hydra.compose(config_name=hydra_config_name)
-            
-            # Convertir en dictionnaire simple et résoudre les interpolations
-            config_dict = OmegaConf.to_container(cfg, resolve=True)
+            # Utiliser notre fonction de résolution personnalisée
+            resolved_config = resolve_config(config_data, config_dir, debug)
             
             # Afficher la configuration résolue
-            click.echo(yaml.dump(config_dict, default_flow_style=False, sort_keys=False))
+            click.echo(yaml.dump(resolved_config, default_flow_style=False, sort_keys=False))
         
-        finally:
-            # Revenir au répertoire de travail original, même en cas d'erreur
-            os.chdir(original_cwd)
+        except Exception as e:
+            if debug:
+                import traceback
+                traceback.print_exc()
+            click.echo(f"Erreur: {e}", err=True)
     else:
-        # Pour la version non résolue, utiliser TheReader
+        # Pour la version non résolue, utiliser TheReader comme avant
         reader = TheReader(config_name)
         if path:
             reader.update_path(path)
@@ -150,13 +131,14 @@ def list_keys(config_name, path, full, values, resolve, debug, ref, raw):
             click.echo(f"Chemin de configuration: {config_dir}")
         
         # Charger le fichier de configuration principal
-        config_file = os.path.join(config_dir, f"{config_name}.yaml")
-        if not os.path.exists(config_file):
-            click.echo(f"Erreur: Fichier de configuration introuvable: {config_file}", err=True)
+        config_filename = get_config_filename(config_name)
+        config_path = os.path.join(config_dir, config_filename)
+        if not os.path.exists(config_path):
+            click.echo(f"Erreur: Fichier de configuration introuvable: {config_path}", err=True)
             return 1
         
         # Charger la configuration
-        with open(config_file, 'r') as f:
+        with open(config_path, 'r') as f:
             config_data = yaml.safe_load(f)
         
         # Afficher le dictionnaire complet si debug est activé
@@ -641,4 +623,161 @@ def normalize_config_name(name):
         return f"config_{name}"
     
     return name  # Déjà au bon format
+
+def get_hydra_config_name(config_name):
+    """
+    Obtient le nom correct à utiliser avec l'API Hydra à partir du nom de fichier de configuration.
+    
+    Règles:
+    - Si le nom est 'config', retourne 'config'
+    - Si le nom commence par 'config_', retire ce préfixe (ex: 'config_dev' -> 'dev')
+    - Sinon, retourne le nom tel quel
+    """
+    if config_name == "config":
+        return "config"
+    elif config_name.startswith("config_"):
+        return config_name[7:]  # Enlever "config_"
+    return config_name
+
+def get_config_filename(name):
+    """
+    Détermine le nom de fichier de configuration complet basé sur le nom fourni.
+    
+    Args:
+        name (str): Nom simple de la configuration (ex: 'dev', 'prod')
+        
+    Returns:
+        str: Nom du fichier de configuration (ex: 'config_dev.yaml', 'config.yaml')
+    """
+    if name == "config" or name == "default":
+        return "config.yaml"
+    else:
+        return f"config_{name}.yaml"
+
+def resolve_config(config_data, config_dir, debug=False):
+    """Résout une configuration en suivant les références dans defaults."""
+    import yaml
+    import os
+    from copy import deepcopy
+    from omegaconf import OmegaConf
+    
+    # Copier pour ne pas modifier l'original
+    result = deepcopy(config_data)
+    
+    # Traiter les références dans defaults
+    if "defaults" in result and isinstance(result["defaults"], list):
+        defaults = result.pop("defaults")  # Enlever defaults après traitement
+        
+        for item in defaults:
+            if debug:
+                click.echo(f"Traitement de la référence: {item}")
+            
+            # Cas 1: Référence simple comme "config"
+            if isinstance(item, str):
+                ref_file = os.path.join(config_dir, f"{item}.yaml")
+                if os.path.isfile(ref_file):
+                    with open(ref_file, 'r') as f:
+                        ref_data = yaml.safe_load(f)
+                        if ref_data:
+                            # Résoudre récursivement
+                            resolved_ref = resolve_config(ref_data, config_dir, debug)
+                            # Fusionner dans le résultat
+                            result = deep_merge(result, resolved_ref)
+            
+            # Cas 2: Référence avec groupe comme {"database": "dev"}
+            elif isinstance(item, dict) and len(item) == 1:
+                for group, option in item.items():
+                    # Option simple comme string
+                    if isinstance(option, str):
+                        ref_file = os.path.join(config_dir, group, f"{option}.yaml")
+                        if os.path.isfile(ref_file):
+                            with open(ref_file, 'r') as f:
+                                group_data = yaml.safe_load(f)
+                                if group_data:
+                                    # Ajouter sous le nom du groupe
+                                    if group not in result:
+                                        result[group] = {}
+                                    result[group] = deep_merge(result.get(group, {}), group_data)
+                    
+                    # Option comme liste (ex: {"secrets": ["keys", "login"]})
+                    elif isinstance(option, list):
+                        if group not in result:
+                            result[group] = {}
+                            
+                        for sub_option in option:
+                            ref_file = os.path.join(config_dir, group, f"{sub_option}.yaml")
+                            if os.path.isfile(ref_file):
+                                with open(ref_file, 'r') as f:
+                                    sub_data = yaml.safe_load(f)
+                                    if sub_data:
+                                        # Ajouter sous le groupe avec la sous-option comme clé
+                                        result[group][sub_option] = sub_data
+    
+    # Convertir en config OmegaConf pour la résolution des interpolations
+    if debug:
+        click.echo("Résolution des variables d'interpolation...")
+    
+    # Convertir en config OmegaConf
+    cfg = OmegaConf.create(result)
+    
+    # Tenter la résolution avec OmegaConf
+    try:
+        # Résoudre les références communes et les variables d'environnement définies
+        resolved_dict = OmegaConf.to_container(cfg, resolve=True)
+        
+        # Post-traitement pour extraire les valeurs par défaut des interpolations non résolues
+        def resolve_interpolations(obj):
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if isinstance(value, (dict, list)):
+                        resolve_interpolations(value)
+                    elif isinstance(value, str) and "${" in value:
+                        # Rechercher les motifs d'interpolation comme ${oc.env:VAR,default}
+                        env_pattern = r'\${oc\.env:([^,}]+),([^}]+)}'
+                        match = re.search(env_pattern, value)
+                        if match:
+                            env_var, default_value = match.groups()
+                            # Utiliser la valeur par défaut si la variable n'est pas définie
+                            if not os.environ.get(env_var):
+                                obj[key] = default_value
+                
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    if isinstance(item, (dict, list)):
+                        resolve_interpolations(item)
+                    elif isinstance(item, str) and "${" in item:
+                        env_pattern = r'\${oc\.env:([^,}]+),([^}]+)}'
+                        match = re.search(env_pattern, item)
+                        if match:
+                            env_var, default_value = match.groups()
+                            if not os.environ.get(env_var):
+                                obj[i] = default_value
+            
+            return obj
+        
+        # Appliquer la résolution des interpolations
+        resolved_dict = resolve_interpolations(resolved_dict)
+        
+        return resolved_dict
+        
+    except Exception as e:
+        if debug:
+            click.echo(f"Erreur lors de la résolution des interpolations: {e}")
+        # En cas d'échec, retourner la version non résolue
+        return result
+
+def deep_merge(dict1, dict2):
+    """Fusionne deux dictionnaires de manière récursive."""
+    import copy
+    result = copy.deepcopy(dict1)
+    
+    for key, value in dict2.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            # Fusion récursive pour les dictionnaires
+            result[key] = deep_merge(result[key], value)
+        else:
+            # Remplacement ou ajout pour les autres types
+            result[key] = copy.deepcopy(value)
+    
+    return result
 

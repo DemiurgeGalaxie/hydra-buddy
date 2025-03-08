@@ -220,3 +220,100 @@ class TheReader:
     def get_config_dir(self):
         """Retourne le chemin vers le répertoire de configuration."""
         return self.config_path if hasattr(self, 'config_path') else '.hydra-conf'
+
+    def get_resolved_config(self, debug=False):
+        """Résout la configuration en suivant toutes les références et en les fusionnant."""
+        import os
+        import yaml
+        
+        # Charger le fichier de configuration principal
+        config_file = os.path.join(self.config_path, f"{self.config_name}.yaml")
+        with open(config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Fonction récursive pour résoudre les références
+        def resolve_references(config_data, base_path):
+            if not isinstance(config_data, dict):
+                return config_data
+            
+            # Copie pour éviter de modifier l'original pendant l'itération
+            result = config_data.copy()
+            
+            # Traiter les références dans defaults
+            if "defaults" in result and isinstance(result["defaults"], list):
+                defaults_list = result.pop("defaults")  # Retirer defaults après traitement
+                
+                for item in defaults_list:
+                    if debug:
+                        print(f"Traitement de la référence: {item}")
+                    
+                    # Cas 1: Référence simple comme "config"
+                    if isinstance(item, str):
+                        ref_file = os.path.join(base_path, f"{item}.yaml")
+                        if os.path.exists(ref_file):
+                            with open(ref_file, 'r') as f:
+                                ref_config = yaml.safe_load(f)
+                                if ref_config:
+                                    resolved_ref = resolve_references(ref_config, base_path)
+                                    result = deep_merge(result, resolved_ref)
+                    
+                    # Cas 2: Référence avec groupe comme {"database": "dev"}
+                    elif isinstance(item, dict) and len(item) == 1:
+                        for group, option in item.items():
+                            # Cas 2.1: Option simple
+                            if isinstance(option, str):
+                                group_path = os.path.join(base_path, group)
+                                ref_file = os.path.join(group_path, f"{option}.yaml")
+                                
+                                if os.path.exists(ref_file):
+                                    with open(ref_file, 'r') as f:
+                                        group_config = yaml.safe_load(f)
+                                        if group_config:
+                                            resolved_group = resolve_references(group_config, base_path)
+                                            # Ajouter le groupe comme clé de premier niveau
+                                            if group not in result:
+                                                result[group] = {}
+                                            result[group] = deep_merge(result.get(group, {}), resolved_group)
+                            
+                            # Cas 2.2: Liste d'options
+                            elif isinstance(option, list):
+                                group_path = os.path.join(base_path, group)
+                                
+                                # Traiter chaque élément de la liste
+                                if group not in result:
+                                    result[group] = {}
+                                    
+                                for sub_option in option:
+                                    ref_file = os.path.join(group_path, f"{sub_option}.yaml")
+                                    
+                                    if os.path.exists(ref_file):
+                                        with open(ref_file, 'r') as f:
+                                            sub_config = yaml.safe_load(f)
+                                            if sub_config:
+                                                # Ajouter sous une clé correspondant à sub_option
+                                                result[group][sub_option] = sub_config
+            
+            # Résoudre récursivement les dictionnaires imbriqués
+            for key, value in list(result.items()):
+                if isinstance(value, dict):
+                    result[key] = resolve_references(value, base_path)
+            
+            return result
+        
+        # Fonction utilitaire pour fusion profonde de dictionnaires
+        def deep_merge(dict1, dict2):
+            result = dict1.copy()
+            
+            for key, value in dict2.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    # Fusion récursive de dictionnaires
+                    result[key] = deep_merge(result[key], value)
+                else:
+                    # Remplacement ou ajout de valeurs
+                    result[key] = value
+            
+            return result
+        
+        # Résoudre la configuration
+        resolved = resolve_references(config, self.config_path)
+        return resolved

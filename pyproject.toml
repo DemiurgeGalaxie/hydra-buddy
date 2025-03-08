@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hydra-buddies"
-version = "0.1.3"
+version = "0.1.4"
 description = "Un gestionnaire de configuration basé sur Hydra"
 authors = ["MChrys <chrys.beltran@outlook.fr>"]
 readme = "README.md"
