@@ -24,6 +24,7 @@ def read(config_name, path, resolve, debug):
         import os
         import yaml
         import hydra
+        from hydra.core.global_hydra import GlobalHydra
         from omegaconf import OmegaConf
         
         # Déterminer le chemin de configuration
@@ -34,7 +35,7 @@ def read(config_name, path, resolve, debug):
         if debug:
             click.echo(f"Chemin de configuration: {config_dir}")
         
-        # Obtenir le nom de fichier approprié
+        # Utiliser notre propre méthode d'analyse qui a fait ses preuves
         config_filename = get_config_filename(config_name)
         config_path = os.path.join(config_dir, config_filename)
         
@@ -42,11 +43,11 @@ def read(config_name, path, resolve, debug):
             click.echo(f"Fichier de configuration: {config_path}")
         
         try:
-            # Charger le fichier YAML
+            # Charger et résoudre avec notre méthode personnalisée
             with open(config_path, 'r') as f:
                 config_data = yaml.safe_load(f)
             
-            # Utiliser notre fonction de résolution personnalisée
+            # Utiliser notre fonction personnalisée qui fonctionne bien
             resolved_config = resolve_config(config_data, config_dir, debug)
             
             # Afficher la configuration résolue
@@ -57,8 +58,9 @@ def read(config_name, path, resolve, debug):
                 import traceback
                 traceback.print_exc()
             click.echo(f"Erreur: {e}", err=True)
+    
     else:
-        # Pour la version non résolue, utiliser TheReader comme avant
+        # Pour la version non résolue, utiliser TheReader
         reader = TheReader(config_name)
         if path:
             reader.update_path(path)
@@ -97,9 +99,7 @@ def get(config_name, key, path):
 @click.option('--raw', is_flag=True, help='Inclure les clés defaults dans le résultat')
 def list_keys(config_name, path, full, values, resolve, debug, ref, raw):
     """Lister toutes les clés disponibles"""
-    # Normaliser le nom de configuration
-    original_name = config_name  # Garder le nom d'origine pour l'affichage
-    config_name = normalize_config_name(config_name)
+    # Ne pas normaliser le nom ici, cela sera fait dans get_config_filename
     
     # Extraire le nom de configuration réel sans le préfixe "config_"
     if config_name == "config":
@@ -107,7 +107,7 @@ def list_keys(config_name, path, full, values, resolve, debug, ref, raw):
     elif config_name.startswith("config_"):
         display_name = config_name[7:]  # Enlever "config_"
     else:
-        display_name = original_name
+        display_name = config_name
     
     if debug:
         click.echo(f"Nom d'affichage de la configuration: {display_name}")
@@ -132,13 +132,13 @@ def list_keys(config_name, path, full, values, resolve, debug, ref, raw):
         
         # Charger le fichier de configuration principal
         config_filename = get_config_filename(config_name)
-        config_path = os.path.join(config_dir, config_filename)
-        if not os.path.exists(config_path):
-            click.echo(f"Erreur: Fichier de configuration introuvable: {config_path}", err=True)
+        config_file = os.path.join(config_dir, config_filename)
+        if not os.path.exists(config_file):
+            click.echo(f"Erreur: Fichier de configuration introuvable: {config_file}", err=True)
             return 1
         
         # Charger la configuration
-        with open(config_path, 'r') as f:
+        with open(config_file, 'r') as f:
             config_data = yaml.safe_load(f)
         
         # Afficher le dictionnaire complet si debug est activé

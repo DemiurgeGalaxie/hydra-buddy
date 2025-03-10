@@ -24,5 +24,5 @@ loggers:
     level: ${oc.env:LOG_LEVEL,INFO}
     handlers: [console, file]
     credentials:
-      username: ${services.rabbitmq.username}  # Utilise les credentials de RabbitMQ pour le logging
+      username: ${services.rabbitmq.username}  
       password: ${services.rabbitmq.password} 
