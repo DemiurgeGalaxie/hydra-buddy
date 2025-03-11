@@ -18,52 +18,70 @@ def cli():
 @click.option('--debug', '-d', is_flag=True, help='Afficher des informations de débogage')
 def read(config_name, path, resolve, debug):
     """Lire une configuration"""
-    # Ne pas normaliser le nom, la fonction get_config_filename s'en occupe
+    import os
+    import yaml
+    from hydra_buddies.buddies import TheReader
+    from omegaconf import OmegaConf
+    
+    # Déterminer le chemin de configuration
+    config_dir = path if path else os.path.join(os.getcwd(), '.hydra-conf')
+    
+    if debug:
+        click.echo(f"Chemin de configuration: {config_dir}")
+    
+    # Charger la configuration avec notre TheReader qui est stable
+    reader = TheReader(config_name)
+    if path:
+        reader.update_path(path)
     
     if resolve:
-        import os
-        import yaml
-        import hydra
-        from hydra.core.global_hydra import GlobalHydra
-        from omegaconf import OmegaConf
-        
-        # Déterminer le chemin de configuration
-        config_dir = path if path else os.path.join(os.getcwd(), 'hydra_buddies', '.hydra-conf')
-        if not os.path.isdir(config_dir):
-            config_dir = path if path else os.path.join(os.getcwd(), '.hydra-conf')
-        
-        if debug:
-            click.echo(f"Chemin de configuration: {config_dir}")
-        
-        # Utiliser notre propre méthode d'analyse qui a fait ses preuves
-        config_filename = get_config_filename(config_name)
-        config_path = os.path.join(config_dir, config_filename)
-        
-        if debug:
-            click.echo(f"Fichier de configuration: {config_path}")
-        
         try:
-            # Charger et résoudre avec notre méthode personnalisée
-            with open(config_path, 'r') as f:
-                config_data = yaml.safe_load(f)
-            
-            # Utiliser notre fonction personnalisée qui fonctionne bien
-            resolved_config = resolve_config(config_data, config_dir, debug)
-            
-            # Afficher la configuration résolue
-            click.echo(yaml.dump(resolved_config, default_flow_style=False, sort_keys=False))
-        
+            # Première tentative: utiliser directement OmegaConf
+            resolved_dict = reader.get_resolved_config()
+            click.echo(yaml.dump(resolved_dict, default_flow_style=False, sort_keys=False))
         except Exception as e:
             if debug:
                 import traceback
                 traceback.print_exc()
-            click.echo(f"Erreur: {e}", err=True)
-    
+                click.echo(f"Erreur lors de la résolution OmegaConf standard: {e}")
+            
+            # Seconde tentative: précharger tous les fichiers référencés
+            # et construire manuellement un dictionnaire complet
+            try:
+                # Extraire les dépendances de defaults si elles existent
+                defaults = reader.cfg.get("defaults", [])
+                combined_cfg = OmegaConf.create({})
+                
+                # Précharger les fichiers secrets et autres dépendances
+                for item in defaults:
+                    if isinstance(item, dict) and len(item) == 1:
+                        for group, name in item.items():
+                            # Charger les dépendances comme secrets/login
+                            if group == "secrets" and isinstance(name, list):
+                                for secret_name in name:
+                                    secret_file = os.path.join(config_dir, "secrets", f"{secret_name}.yaml")
+                                    if os.path.exists(secret_file):
+                                        with open(secret_file, 'r') as f:
+                                            secret_cfg = OmegaConf.create(yaml.safe_load(f))
+                                            # Fusionner manuellement
+                                            combined_cfg = OmegaConf.merge(combined_cfg, secret_cfg)
+                
+                # Fusionner avec la configuration principale
+                full_cfg = OmegaConf.merge(combined_cfg, reader.cfg)
+                
+                # Maintenant tenter à nouveau la résolution
+                resolved_dict = OmegaConf.to_container(full_cfg, resolve=True)
+                click.echo(yaml.dump(resolved_dict, default_flow_style=False, sort_keys=False))
+            
+            except Exception as e2:
+                if debug:
+                    click.echo(f"Erreur lors de la résolution manuelle: {e2}")
+                
+                # Solution de dernier recours: afficher non résolu
+                click.echo("Impossible de résoudre les interpolations. Version non résolue:")
+                click.echo(reader)
     else:
-        # Pour la version non résolue, utiliser TheReader
-        reader = TheReader(config_name)
-        if path:
-            reader.update_path(path)
+        # Version non résolue
         click.echo(reader)
 
 @cli.command()
@@ -101,13 +119,8 @@ def list_keys(config_name, path, full, values, resolve, debug, ref, raw):
     """Lister toutes les clés disponibles"""
     # Ne pas normaliser le nom ici, cela sera fait dans get_config_filename
     
-    # Extraire le nom de configuration réel sans le préfixe "config_"
-    if config_name == "config":
-        display_name = "config"
-    elif config_name.startswith("config_"):
-        display_name = config_name[7:]  # Enlever "config_"
-    else:
-        display_name = config_name
+
+    display_name = config_name
     
     if debug:
         click.echo(f"Nom d'affichage de la configuration: {display_name}")
@@ -493,7 +506,7 @@ def add_config(name):
         config_content['env'] = name
     
     # Créer le fichier config_<name>.yaml
-    new_config_file = os.path.join(config_dir, f"config_{name}.yaml")
+    new_config_file = os.path.join(config_dir, f"{name}.yaml")
     with open(new_config_file, 'w') as f:
         yaml.dump(config_content, f, default_flow_style=False)
     
@@ -652,7 +665,7 @@ def get_config_filename(name):
     if name == "config" or name == "default":
         return "config.yaml"
     else:
-        return f"config_{name}.yaml"
+        return f"{name}.yaml"
 
 def resolve_config(config_data, config_dir, debug=False):
     """Résout une configuration en suivant les références dans defaults."""

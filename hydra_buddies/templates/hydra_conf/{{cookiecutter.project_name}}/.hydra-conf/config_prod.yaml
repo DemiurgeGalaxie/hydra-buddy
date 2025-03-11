@@ -1,6 +1,0 @@
-defaults:
-  - config
-  - database: prod
-  - api: prod
-
-env: production 

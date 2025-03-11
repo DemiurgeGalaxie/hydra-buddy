@@ -1,9 +1,9 @@
 defaults:
+  - secrets/login
+  - secrets/keys
   - _self_
   - database: default
   - api: default
-  - secrets/keys
-  - secrets/login
   - logging: default
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
