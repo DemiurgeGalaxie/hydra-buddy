@@ -1,3 +1,12 @@
+# Hydra-Buddies
+
+Un wrapper élégant et intuitif pour Hydra qui simplifie la gestion de configuration dans vos projets Python.
+
+## Vue d'ensemble
+
+Hydra-Buddies facilite l'accès et la manipulation des configurations Hydra grâce à une navigation contextuelle fluide, une résolution intelligente des interpolations et une prise en charge des configurations imbriquées. Il est idéal pour les applications complexes nécessitant des configurations structurées.
+
+
 # Rapport de développement - Hydra-Buddies
 
 ## Vue d'ensemble
@@ -57,382 +66,248 @@ TheReader
 
 ## Guide technique détaillé
 
-### Installation et configuration
+## Installation
 
-1. Installation via pip :
 ```bash
 pip install hydra-buddies
 ```
 
-2. Configuration minimale requise :
-```yaml
-# .hydra-conf/config.yaml
-key: value
-nested:
-  key: value
-```
 
-### Initialisation et configuration
+## Fonctionnalités clés
+
+### 1. Navigation contextuelle
+
+Parcourez votre configuration de manière intuitive :
 
 ```python
 from hydra_buddies import TheReader
 
-# Initialisation basique
 reader = TheReader("config")
 
-# Avec chemin de configuration personnalisé
-reader = TheReader("config")
-reader.update_path("chemin/vers/config")
-```
+# Navigation simple et directe
+project_name = reader.project.name
 
-### Patterns d'utilisation
-
-1. **Pattern Contextuel**
-```python
-with reader:
-    reader.walk("database")
+# Navigation contextuelle avec walk()
+with reader.walk('database'):
     host = reader.host
     port = reader.port
-# Le contexte est automatiquement réinitialisé ici
-```
-
-2. **Pattern Chaîné**
-```python
-# Navigation directe
-result = reader.walk("database", "credentials").username
-
-# Avec context manager
-with reader.walk("database", "credentials") as r:
-    username = r.username
-    password = r.password
-```
-
-3. **Pattern Dictionnaire**
-```python
-# Lecture
-value = reader["key"]
-nested_value = reader["parent"]["child"]
-
-# Écriture
-reader["key"] = "nouvelle_valeur"
-```
-
-### Gestion des erreurs
-
-```python
-try:
-    reader.walk("chemin", "inexistant")
-except AttributeError as e:
-    print("Chemin non trouvé:", e)
-
-try:
-    reader.update_path("/mauvais/chemin")
-except ValueError as e:
-    print("Erreur de mise à jour du chemin:", e)
-```
-
-### Bonnes pratiques
-
-1. **Gestion du contexte**
-```python
-# Recommandé
-with reader:
-    reader.walk("section")
-    # travail dans le contexte
-
-# À éviter
-reader.walk("section")
-# travail sans context manager
-```
-
-2. **Mise à jour des chemins**
-```python
-# Recommandé - avant toute navigation
-reader.update_path("nouveau/chemin")
-reader.walk("section")
-
-# À éviter - mise à jour pendant la navigation
-reader.walk("section")
-reader.update_path("nouveau/chemin")  # Lève une ValueError
-```
-
-3. **Utilisation des préfixes**
-```python
-# Décorateur de préfixe
-@reader.add_prefix("dev")
-def configure_dev():
-    return reader.database.host
-
-# Les clés seront accessibles via dev.database.host
-```
-
-### Exemples avancés
-
-1. **Configuration multi-environnement**
-```python
-# config.yaml
-dev:
-  database:
-    host: localhost
-prod:
-  database:
-    host: production.server
-
-# Usage
-with reader:
-    # Développement
-    reader.walk("dev")
-    dev_host = reader.database.host
     
-    # Production
-    reader.walk("prod")
-    prod_host = reader.database.host
+    # Imbrication des contextes
+    with reader.walk('credentials'):
+        username = reader.username
+        password = reader.password
+
+# Le contexte se restaure automatiquement à la sortie du bloc
 ```
 
-2. **Manipulation dynamique**
+
+### 2. Flexibilité d'accès
+
+Plusieurs façons d'accéder aux données :
+
 ```python
-def configure_environment(env: str):
-    with reader:
-        reader.walk(env)
-        return {
-            "host": reader.database.host,
-            "port": reader.database.port,
-            "credentials": {
-                "user": reader.database.credentials.username,
-                "pass": reader.database.credentials.password
-            }
-        }
+# Style attribut (recommandé)
+api_url = reader.api.url
+
+# Style dictionnaire
+timeout = reader["api"]["timeout"]
+
+# Navigation chainée
+max_retries = reader.api.retry.max_attempts
 ```
 
-## Points forts
 
-1. **Simplicité d'utilisation**
-   - API intuitive
-   - Réduction de la verbosité
-   - Documentation claire
+### 3. Gestion avancée des chemins multiples
 
-2. **Flexibilité**
-   - Multiples styles d'accès
-   - Support des configurations complexes
-   - Extension facile
+Nouveauté ! Chargez des configurations depuis plusieurs sources :
 
-3. **Robustesse**
-   - Gestion des erreurs
-   - Validation des entrées
-   - Compatibilité Hydra
-
-## Améliorations futures
-
-1. **Performance**
-   - Optimisation de la navigation
-   - Cache intelligent
-   - Lazy loading
-
-2. **Fonctionnalités**
-   - Validation de schéma
-   - Support async
-   - Plugins système
-
-3. **Documentation**
-   - Plus d'exemples
-   - Tutoriels vidéo
-   - Documentation API complète
-
-## Utilisation de TheReader
-
-La classe `TheReader` est le cœur de Hydra-Buddies. Voici comment l'utiliser :
-
-### Initialisation
-
-Pour initialiser un objet `TheReader`, vous devez fournir le nom de la configuration que vous souhaitez lire. Par exemple :
 ```python
-reader = TheReader("ma_config")
+# Initialiser avec le chemin par défaut
+reader = TheReader("config")
+
+# Définir le chemin principal
+reader.update_path("/path/to/main/config")
+
+# Ajouter des chemins supplémentaires pour les imports imbriqués
+reader.add_config_path("/path/to/services/config")
+reader.add_config_path("/path/to/environments/config")
+
+# Les configurations seront fusionnées intelligemment
 ```
-Cela créera un objet `TheReader` prêt à lire et à manipuler votre configuration.
 
-### Navigation contextuelle
 
-Pour naviguer dans la hiérarchie de votre configuration, utilisez la méthode `walk()`. Par exemple, pour accéder à une sous-clé `database` puis à une sous-clé `host`, vous pouvez faire :
+### 4. Résolution fiable des interpolations
+
+Nouveauté ! Solution robuste pour la résolution des références entre fichiers :
+
 ```python
-reader.walk("database", "host")
+# Obtenir une configuration entièrement résolue
+resolved_config = reader.get_resolved_config()
+
+# Accéder aux valeurs résolues (incluant les références croisées)
+db_password = resolved_config["database"]["credentials"]["password"]
+
+# La configuration résolue est également stockée dans reader.resolved
 ```
-Cela positionnera le curseur sur la clé `host` dans le contexte `database`.
 
-### Accès aux valeurs
 
-Une fois que vous avez navigué jusqu'à une clé, vous pouvez accéder à sa valeur en utilisant le style attribut ou le style dictionnaire. Par exemple :
+### 5. Préfixage
+
+Utilisation de décorateurs pour ajouter des préfixes aux clés :
+
 ```python
-print(reader.key)  # Style attribut
-print(reader["key"])  # Style dictionnaire
+@reader.add_prefix('dev')
+def setup_environment():
+    # Toutes les clés sont disponibles avec le préfixe 'dev.'
+    # mais aussi avec leur nom original
+    setup_database(reader.dev.database.host)
 ```
-### Modification des valeurs
 
-Vous pouvez modifier les valeurs de votre configuration en utilisant le style attribut ou le style dictionnaire. Par exemple :
-```python
-reader.key = "nouvelle_valeur"  # Style attribut
-reader["key"] = "nouvelle_valeur"  # Style dictionnaire
+
+## Structure recommandée des configurations
+
+Pour une résolution correcte des interpolations, structurez vos fichiers YAML comme suit :
+
+```yaml
+# config.yaml
+defaults:
+  - secrets/login      # Charger les secrets en PREMIER
+  - secrets/keys       # Puis les clés sensibles
+  - secrets/env        # Puis les variables d'environnement
+  - _self_             # Contenu de ce fichier
+  - database: default  # Configurations de composants
+  - api: default
+  - logging: default
+
+project:
+  name: "mon-projet"
+  version: "1.0.0"
 ```
-### Ajout de préfixes
 
-Pour ajouter un préfixe à vos clés de configuration, utilisez le décorateur `add_prefix()`. Par exemple :
-```python
-reader.add_prefix("mon_prefix")
-```
-Cela ajoutera le préfixe `mon_prefix.` à toutes les clés de votre configuration qui ne le possèdent pas déjà.
 
-### Context manager
+## Interface en ligne de commande
 
-`TheReader` supporte le context manager (`with`). Cela signifie que vous pouvez utiliser un objet `TheReader` dans un bloc `with` pour gérer automatiquement le contexte. Par exemple :
-```python
-with TheReader("ma_config") as reader:
-    # Votre code ici
-    reader.walk("database", "host")
-    print(reader.key)
-```
-Lorsque vous sortez du bloc `with`, le contexte est automatiquement réinitialisé. Cela vous permet de gérer votre configuration dans un contexte spécifique sans avoir à vous soucier de la gestion du contexte.
-
-### Navigation directe avec context manager
-
-Vous pouvez également utiliser le context manager avec la méthode `walk()` pour naviguer directement dans le contexte. Par exemple :
-```python
-with TheReader("ma_config").walk("database", "host") as reader:
-    # Votre code ici
-    print(reader.key)
-```
-Cela vous permet de naviguer directement dans le contexte sans avoir à appeler la méthode `walk()` séparément.
-
-### Réinitialisation du contexte
-
-Si vous souhaitez réinitialiser le contexte manuellement, vous pouvez utiliser la méthode `start()`. Par exemple :
-```python
-reader.start()
-```
-Cela réinitialisera le contexte et vous permettra de recommencer à naviguer dans la hiérarchie de votre configuration.
-
-## Conclusion
-
-Hydra-Buddies offre une solution élégante pour la gestion de configuration en Python, combinant simplicité d'utilisation et puissance fonctionnelle.
-
-# Hydra-Buddies Documentation
-
-## Commandes CLI
-
-Hydra-Buddies fournit plusieurs commandes en ligne de commande via l'utilitaire `buddy`. Voici le détail de chaque commande :
-
-### Initialisation du projet
+### Lire une configuration
 
 ```bash
-buddy init
+buddy read CONFIG_NAME [OPTIONS]
 ```
 
-Cette commande initialise un nouveau projet avec une structure de configuration Hydra. Elle :
-- Crée un répertoire `.hydra-conf` avec une structure complète
-- Configure les environnements dev et prod
-- Met en place la gestion des secrets
-- Ajoute automatiquement le répertoire des secrets au .gitignore
-- Crée les configurations pour la base de données, l'API et les logs
 
-### Lecture de configuration
+Options:
+- `--path, -p TEXT` : Chemin vers le répertoire de configuration
+- `--resolve, -r` : Résoudre les interpolations
+- `--debug, -d` : Afficher des informations de débogage
+
+Exemples:
+```bash
+buddy read dev                      # Afficher dev.yaml
+buddy read config --resolve         # Afficher avec interpolations résolues
+```
+
+
+### Obtenir une valeur spécifique
 
 ```bash
-# Lire toute la configuration
-buddy read config_name
-
-# Lire avec un chemin spécifique
-buddy read config_name --path /chemin/vers/config
+buddy get CONFIG_NAME KEY [OPTIONS]
 ```
 
-Cette commande affiche le contenu complet d'une configuration. Options :
-- `config_name` : Nom de la configuration à lire
-- `--path, -p` : Chemin optionnel vers le répertoire de configuration
 
-### Obtention d'une valeur spécifique
+Options:
+- `--path, -p TEXT` : Chemin vers le répertoire de configuration
+
+Exemples:
+```bash
+buddy get dev database.host         # Récupérer l'hôte de la base de données
+```
+
+
+### Lister les clés d'une configuration
 
 ```bash
-# Obtenir une valeur simple
-buddy get config_name database.host
-
-# Avec un chemin personnalisé
-buddy get config_name api.url --path /chemin/vers/config
+buddy list-keys CONFIG_NAME [OPTIONS]
 ```
 
-Cette commande permet d'extraire une valeur spécifique de la configuration. Arguments :
-- `config_name` : Nom de la configuration
-- `key` : Chemin de la clé (utilise la notation point)
-- `--path, -p` : Chemin optionnel vers le répertoire de configuration
 
-### Liste des clés disponibles
+Options:
+- `--path, -p TEXT` : Chemin vers le répertoire de configuration
+- `--full, -f` : Afficher toutes les clés à tous les niveaux
+- `--values, -v` : Afficher les valeurs primitives
+- `--resolve, -r` : Résoudre les références 
+- `--debug, -d` : Afficher des informations de débogage
+- `--ref` : Afficher les références des sources
+- `--raw` : Inclure les clés defaults dans le résultat
 
-```bash
-# Lister toutes les clés
-buddy list-keys config_name
-
-# Avec un chemin personnalisé
-buddy list-keys config_name --path /chemin/vers/config
-```
-
-Cette commande affiche toutes les clés disponibles dans la configuration de manière récursive. Options :
-- `config_name` : Nom de la configuration à explorer
-- `--path, -p` : Chemin optionnel vers le répertoire de configuration
-
-## Structure de configuration générée
-
-L'initialisation (`buddy init`) crée la structure suivante :
+## Architecture
 
 ```
-.hydra-conf/
-├── api/
-│   ├── default.yaml
-│   ├── dev.yaml
-│   └── prod.yaml
-├── database/
-│   ├── default.yaml
-│   ├── dev.yaml
-│   └── prod.yaml
-├── logging/
-│   ├── default.yaml
-│   ├── dev.yaml
-│   └── prod.yaml
-├── secrets/
-│   ├── keys.yaml
-│   └── login.yaml
-├── config.yaml
-├── config_dev.yaml
-└── config_prod.yaml
+TheReader
+├── Attributs
+│   ├── primary_path: str              # Chemin principal
+│   ├── config_paths: List[str]        # Chemins supplémentaires
+│   ├── cfg_name: str                  # Nom de la configuration
+│   ├── cfg: DictConfig                # Configuration chargée
+│   ├── resolved: dict                 # Configuration résolue
+│   ├── context: List[str]             # Contexte de navigation
+│   └── cursor: DictConfig             # Curseur de navigation
+└── Méthodes
+    ├── __init__(cfg_name: str)
+    ├── update_path(path: str)
+    ├── add_config_path(path: str)
+    ├── _promote_secrets()
+    ├── get_resolved_config()
+    ├── walk(*args: list[str])
+    ├── get_context()
+    └── add_prefix(prefix: str)
 ```
 
-### Sécurité
 
-La commande `init` configure automatiquement la sécurité :
-- Ajoute `.hydra-conf/secret/*` au .gitignore
-- Met en place des variables d'environnement pour les secrets
-- Sépare les configurations sensibles dans le répertoire `secrets/`
+## Exemples d'intégration
 
-### Exemples d'utilisation
+### Avec Flask
 
-1. Initialiser un nouveau projet :
-```bash
-buddy init
+```python
+from flask import Flask
+from hydra_buddies import TheReader
+
+env = os.environ.get("FLASK_ENV", "dev")
+config_reader = TheReader(env)
+
+app = Flask(__name__)
+app.config.update(config_reader.get_resolved_config())
 ```
 
-2. Lire la configuration de développement :
-```bash
-buddy read config_dev
+
+### Dans un script de traitement de données
+
+```python
+from hydra_buddies import TheReader
+
+reader = TheReader("etl")
+config = reader.get_resolved_config()
+
+db_connection = create_connection(
+    host=config["database"]["host"],
+    port=config["database"]["port"],
+    user=config["database"]["credentials"]["username"],
+    password=config["database"]["credentials"]["password"]
+)
 ```
 
-3. Obtenir l'URL de l'API en production :
-```bash
-buddy get config_prod api.url
-```
 
-4. Explorer toutes les clés disponibles :
-```bash
-buddy list-keys config
-```
+## Bonnes pratiques
 
-### Bonnes pratiques
+1. **Secrets en premier** : Placez toujours les imports de secrets au début de la liste `defaults`
+2. **Structure claire** : Organisez vos configurations par domaine fonctionnel
+3. **Chemins multiples** : Utilisez `add_config_path()` pour les grandes applications avec plusieurs modules
+4. **Valeurs par défaut** : Fournissez des valeurs par défaut pour les variables d'environnement
+5. **Isolation** : Séparez les configurations spécifiques à l'environnement dans des fichiers distincts (dev, prod, etc.)
 
-1. Toujours initialiser le projet avec `buddy init`
-2. Vérifier que les secrets sont bien dans .gitignore
-3. Utiliser des variables d'environnement pour les valeurs sensibles
-4. Séparer les configurations par environnement
+## Références
+
+- [Documentation Hydra](https://hydra.cc/docs/intro)
+- [Tutoriel sur OmegaConf](https://omegaconf.readthedocs.io/)
+
+---
+
+Contribuez à Hydra-Buddies ou signalez des problèmes sur [GitHub](https://github.com/votre-repo/hydra-buddies).
