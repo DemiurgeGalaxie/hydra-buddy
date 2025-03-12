@@ -53,9 +53,16 @@ class TheReader:
 
     def _initialize_hydra(self):
         """Initialise Hydra avec le chemin principal."""
+        from hydra.core.config_store import ConfigStore
+        from hydra.core.hydra_config import HydraConfig
+        import sys
         if GlobalHydra().is_initialized():
             GlobalHydra.instance().clear()
-        
+        # HydraConfig.instance().set_config(OmegaConf.create({
+        #     "runtime": {
+        #         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        #     }
+        # }))
         # Initialiser avec le chemin principal
         hydra.initialize(config_path=self.primary_path, version_base=None)
 
@@ -75,10 +82,13 @@ class TheReader:
         return hydra.compose(config_name=cfg_name, overrides=path_overrides)
     
     def _promote_secrets(self):
-        """Promeut les valeurs des secrets au niveau racine."""
+        """Promeut les valeurs des secrets au niveau racine et gère les cas spéciaux."""
         if 'secrets' in self.cfg:
             # Convertir en dictionnaire standard
             config_dict = OmegaConf.to_container(self.cfg, resolve=False)
+            
+            # Traiter les interpolations Hydra spéciales
+            self._handle_special_interpolations(config_dict)
             
             # Parcourir toutes les sections de secrets
             if 'secrets' in config_dict and isinstance(config_dict['secrets'], dict):
@@ -94,6 +104,35 @@ class TheReader:
             
             # Reconvertir en OmegaConf
             self.cfg = OmegaConf.create(config_dict)
+
+    def _handle_special_interpolations(self, config_dict):
+        """Remplace les interpolations Hydra problématiques par leurs valeurs réelles."""
+        import sys
+        
+        def process_dict(d):
+            for key, value in list(d.items()):
+                if isinstance(value, dict):
+                    process_dict(value)
+                elif isinstance(value, list):
+                    process_list(value)
+                elif isinstance(value, str):
+                    # Remplacer les interpolations Hydra connues
+                    if value == "${hydra:runtime.python_version}":
+                        d[key] = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+                    # Ajouter d'autres cas spéciaux au besoin
+        
+        def process_list(lst):
+            for i, item in enumerate(lst):
+                if isinstance(item, dict):
+                    process_dict(item)
+                elif isinstance(item, list):
+                    process_list(item)
+                elif isinstance(item, str):
+                    if item == "${hydra:runtime.python_version}":
+                        lst[i] = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        
+        # Lancer le traitement récursif
+        process_dict(config_dict)
 
     def update_path(self, path: str):
         """Met à jour le chemin principal de recherche des configurations.

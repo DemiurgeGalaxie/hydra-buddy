@@ -37,7 +37,7 @@ def read(config_name, path, resolve, debug):
     if resolve:
         try:
             # Première tentative: utiliser directement OmegaConf
-            resolved_dict = reader.get_resolved_config()
+            resolved_dict = reader.get_config()
             click.echo(yaml.dump(resolved_dict, default_flow_style=False, sort_keys=False))
         except Exception as e:
             if debug:
